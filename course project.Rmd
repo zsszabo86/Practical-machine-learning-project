@@ -1,0 +1,92 @@
+---
+title: "course project"
+author: "zsszabo86"
+date: "March 30, 2018"
+output: html_document
+---
+
+##Intro
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, our goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The goal is to predict the manner in which they did the exercise.
+
+##Loading necessary packages
+```{r}
+library(caret)
+library(randomForest)
+```
+
+##Loading the data
+A training and a testing dataset were available coming with the project. These are both downloaded to the assignment folder and loaded into memory by the following lines.
+```{r}
+trainingDataSet <- read.csv("trainData.csv", sep=",", header=TRUE, na.strings = c("NA","",'#DIV/0!'))
+testingDataSet <- read.csv("testData.csv", sep=",", header=TRUE, na.strings = c("NA","",'#DIV/0!'))
+```
+
+##Removing empty cols
+To reduce the number of variables, first the empty columns are removed from both datasets.
+```{r}
+trainingDataSet <- trainingDataSet[,(colSums(is.na(trainingDataSet)) == 0)]
+testingDataSet <- testingDataSet[,(colSums(is.na(testingDataSet)) == 0)]
+```
+
+##Further preprocessing
+Some preprocessing of the datasets is needed before the best model could be trained and tested.
+```{r}
+numericalsIdx <- which(lapply(trainingDataSet, class) %in% "numeric")
+
+preprocessModel <-preProcess(trainingDataSet[,numericalsIdx],method=c('knnImpute', 'center', 'scale'))
+pre_trainingDataSet <- predict(preprocessModel, trainingDataSet[,numericalsIdx])
+pre_trainingDataSet$classe <- trainingDataSet$classe
+
+pre_testingDataSet <- predict(preprocessModel,testingDataSet[,numericalsIdx])
+```
+
+Below near-zero variables are thrown out.
+```{r}
+nzv <- nearZeroVar(pre_trainingDataSet,saveMetrics=TRUE)
+pre_trainingDataSet <- pre_trainingDataSet[,nzv$nzv==FALSE]
+
+nzv <- nearZeroVar(pre_testingDataSet,saveMetrics=TRUE)
+pre_testingDataSet <- pre_testingDataSet[,nzv$nzv==FALSE]
+```
+
+##Validation set
+For the later estimation of test set error, a so called validation set is produced as a subset of the preprocessed training dataset.
+```{r}
+set.seed(67)
+idxTrain <- createDataPartition(pre_trainingDataSet$classe, p=4/5, list=FALSE)
+training <- pre_trainingDataSet[idxTrain, ]
+validation <- pre_trainingDataSet[-idxTrain, ]
+```
+
+##Training, Random Forest
+In this project the method of random forest ("rf") is selected to use for model training, see below.
+```{r}
+modFitrf <- train(classe ~., method="rf", data=training, trControl=trainControl(method='cv'), number=5, allowParallel=TRUE, importance=TRUE )
+modFitrf
+```
+
+##Observing the model
+Random forests allow us to look at feature importances. The figure below rates the features.
+```{r}
+varImpPlot(modFitrf$finalModel, sort = TRUE, type = 1, pch = 19, col = 1, cex = 0.6, main = "Importance of the individual principal components")
+```
+
+The figure below shows the number of variables randomly sampled as candidates at each split. As given above in the description of final modFitrf, the final value used for the model was mtry = 2 (one can see, as the best choice here).
+```{r}
+plot(modFitrf,main="Accuracy of random forest model by number of predictors")
+```
+
+##Error
+The error of the prediction is estimated by comparing the predictions for the validation set and the actual classes in it.
+```{r}
+predValidRF <- predict(modFitrf, validation)
+accur <- postResample(validation$classe, predValidRF)
+1 - accur[[1]]
+```
+
+##Final prediction
+By the application of the trained and validated model, the test set gave the following results.
+```{r}
+pred_final <- predict(modFitrf, pre_testingDataSet)
+pred_final
+```
